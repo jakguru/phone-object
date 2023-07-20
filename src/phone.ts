@@ -41,6 +41,16 @@ import { isos } from './countries'
 import { timezones } from './countries'
 
 /**
+ * The `areaCodeMap` variable is imported from the `./nampa` module and represents a map of NANPA area codes to NANPA country codes.
+ */
+import { areaCodeMap } from './nampa'
+
+/**
+ * The `nanpaCountries` variable is imported from the `./nampa` module and represents a list of NANPA country codes.
+ */
+import { nanpaCountries } from './nampa'
+
+/**
  * The `RawPhoneType` type represents the phone number which should be parsed. It can be either a string or a number.
  * @typedef {string | number} RawPhoneType
  */
@@ -295,6 +305,19 @@ export class Phone implements PhoneModel {
         // noop
       }
     }
+    if (true === this.#valid && nanpaCountries.includes(this.#country)) {
+      this.#country = this.#getCorrectedNANPCountry()
+    }
+    Object.defineProperty(this, 'country', { value: this.country, writable: false })
+    Object.defineProperty(this, 'valid', { value: this.valid, writable: false })
+    Object.defineProperty(this, 'type', { value: this.type, writable: false })
+    Object.defineProperty(this, 'mobile', { value: this.mobile, writable: false })
+    Object.defineProperty(this, 'raw', { value: this.raw, writable: false })
+    Object.defineProperty(this, 'national', { value: this.national, writable: false })
+    Object.defineProperty(this, 'international', { value: this.international, writable: false })
+    Object.defineProperty(this, 'e164', { value: this.e164, writable: false })
+    Object.defineProperty(this, 'timezone', { value: this.timezone, writable: false })
+    Object.freeze(this)
   }
 
   /**
@@ -429,6 +452,26 @@ export class Phone implements PhoneModel {
     if (potentials.length >= 1) {
       return potentials[0].iso
     }
+    return this.#guessCountryWithoutPrefix(phone)
+  }
+
+  #guessCountryWithoutPrefix(phone: string): CountryOrUnknown {
+    const potentials = allCountries
+      .map((c) => ({
+        iso: c.iso2.toUpperCase(),
+        prefix: String(c.dialCode).trim().replace(/\D/g, ''),
+      }))
+      .sort(this.#sortCountriesByPrefix)
+      .filter((c) => {
+        // done like this because typescript thinks that T.constructor is not a type of T but a plain function
+        // https://stackoverflow.com/a/61444747/10645758
+        const t = this.constructor as { new (...args: ConstructorParameters<typeof Phone>): Phone }
+        const tp = new t(phone, c.iso)
+        return tp.valid
+      })
+    if (potentials.length >= 1) {
+      return potentials[0].iso
+    }
     return 'XX'
   }
 
@@ -477,6 +520,14 @@ export class Phone implements PhoneModel {
     const typeKeys = Object.keys(libPhoneNumber.PhoneNumberType)
     const typeIndex = typeValues.indexOf(type)
     return (typeKeys[typeIndex] as PhoneTypes) || 'INVALID'
+  }
+
+  #getCorrectedNANPCountry(): CountryOrUnknown {
+    const ak = this.raw.substring(1, 4)
+    if (areaCodeMap[ak] && 'string' === typeof areaCodeMap[ak]) {
+      return areaCodeMap[ak] as Country
+    }
+    return 'XX'
   }
 
   /**
@@ -574,6 +625,25 @@ export class Phone implements PhoneModel {
    */
   public toString() {
     return this.e164
+  }
+
+  /**
+   * Returns a stringified representation of the phone number.
+   * @returns {string} - A string representation of the phone number.
+   */
+  public inspect() {
+    return `Phone {
+      phone: ${this.#phone},
+      country: ${this.#country},
+      valid: ${this.valid === true ? 'true' : 'false'},
+      type: ${this.type},
+      mobile: ${this.mobile === true ? 'true' : 'false'},
+      raw: ${this.raw},
+      national: ${this.national},
+      international: ${this.international},
+      e164: ${this.e164},
+      timezone: ${this.timezone},
+    }`
   }
 
   /**
